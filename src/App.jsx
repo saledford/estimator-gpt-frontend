@@ -347,26 +347,15 @@ function App() {
           }
         }
 
-        const formData = new FormData();
-        for (const fileMeta of selectedProject.files.concat(uploadedFiles.filter((f) => f.id))) {
-          if (fileMeta.id) {
-            try {
-              const response = await fetch(`${API_BASE}/api/projects/${selectedProjectId}/files/${fileMeta.id}`);
-              if (!response.ok) {
-                throw new Error(`Failed to retrieve ${fileMeta.name}`);
-              }
-              const blob = await response.blob();
-              const file = new File([blob], fileMeta.name, { type: blob.type });
-              formData.append('files', file);
-            } catch (err) {
-              console.error(`Error retrieving file ${fileMeta.name}: ${err.message}`);
-            }
-          }
-        }
-        const summaryResponse = await fetch(`${API_BASE}/api/generate-summary`, {
+        // AUTO-SCAN SUMMARY - FIXED ENDPOINT
+        const summaryResponse = await fetch(`${API_BASE}/api/projects/${selectedProjectId}/scan`, {
           method: 'POST',
-          body: formData,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            scan_type: 'summary'
+          })
         });
+        
         const summaryResult = await summaryResponse.json();
         if (!summaryResponse.ok || !summaryResult.summary) {
           throw new Error(summaryResult.detail || 'Summary generation failed.');
