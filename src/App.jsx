@@ -236,9 +236,13 @@ function App() {
   const handleAddFiles = async (files, fileType) => {
     if (!selectedProjectId) return;
 
+    // Get fresh project state
+    const getCurrentProject = () => projects.find(p => p.id === selectedProjectId);
+    let currentProject = getCurrentProject();
+
     const unique = Array.from(files).filter(
       (newFile) =>
-        !selectedProject.files.some(
+        !currentProject.files.some(
           (existing) => existing.name === newFile.name && existing.type === fileType
         )
     );
@@ -253,24 +257,35 @@ function App() {
     }));
 
     // Add files to state immediately
-    updateProject(selectedProjectId, {
-      files: [...selectedProject.files, ...uploadedFiles],
-      message: `Uploading ${unique.length} ${fileType}(s)...`,
-    });
+    setProjects(prev => prev.map(p => 
+      p.id === selectedProjectId 
+        ? {
+            ...p,
+            files: [...p.files, ...uploadedFiles],
+            message: `Uploading ${unique.length} ${fileType}(s)...`
+          }
+        : p
+    ));
 
     for (let i = 0; i < unique.length; i++) {
       const file = unique[i];
       if (!file.name.toLowerCase().endsWith('.pdf')) {
-        updateProject(selectedProjectId, {
-          files: selectedProject.files.map((f) =>
-            f.name === file.name && f.type === fileType
-              ? { ...f, isUploading: false }
-              : f
-          ),
-          message: `Only PDF files are supported: ${file.name} skipped.`,
-        });
+        setProjects(prev => prev.map(p => 
+          p.id === selectedProjectId 
+            ? {
+                ...p,
+                files: p.files.map(f =>
+                  f.name === file.name && f.type === fileType && f.isUploading
+                    ? { ...f, isUploading: false }
+                    : f
+                ),
+                message: `Only PDF files are supported: ${file.name} skipped.`
+              }
+            : p
+        ));
         continue;
       }
+
       const formData = new FormData();
       formData.append('file', file);
       try {
@@ -282,6 +297,7 @@ function App() {
         if (!response.ok) {
           throw new Error(result.detail || `Failed to upload ${file.name}`);
         }
+
         const fileMeta = {
           id: result.fileId,
           name: file.name,
@@ -290,37 +306,57 @@ function App() {
           isUploading: false,
         };
         uploadedFiles[i] = fileMeta;
-        updateProject(selectedProjectId, {
-          files: selectedProject.files.map((f) =>
-            f.name === file.name && f.type === fileType
-              ? fileMeta
-              : f
-          ),
-        });
+
+        // Use callback to get fresh state
+        setProjects(prev => prev.map(p => 
+          p.id === selectedProjectId 
+            ? {
+                ...p,
+                files: p.files.map(f =>
+                  f.name === file.name && f.type === fileType && f.isUploading
+                    ? fileMeta
+                    : f
+                )
+              }
+            : p
+        ));
       } catch (err) {
         console.error(`Failed to upload ${file.name}: ${err.message}`);
-        updateProject(selectedProjectId, {
-          files: selectedProject.files.map((f) =>
-            f.name === file.name && f.type === fileType
-              ? { ...f, isUploading: false }
-              : f
-          ),
-          message: `Failed to upload ${file.name}: ${err.message}`,
-        });
+        setProjects(prev => prev.map(p => 
+          p.id === selectedProjectId 
+            ? {
+                ...p,
+                files: p.files.map(f =>
+                  f.name === file.name && f.type === fileType && f.isUploading
+                    ? { ...f, isUploading: false }
+                    : f
+                ),
+                message: `Failed to upload ${file.name}: ${err.message}`
+              }
+            : p
+        ));
         return;
       }
     }
 
     // Auto-scan for blueprints, specs, or addenda
     if (fileType === 'spec' || fileType === 'blueprint' || fileType === 'addenda') {
-      updateProject(selectedProjectId, {
-        message: '📄 Scanning uploaded document for summary...',
-      });
+      setProjects(prev => prev.map(p => 
+        p.id === selectedProjectId 
+          ? {
+              ...p,
+              message: '📄 Scanning uploaded document for summary...'
+            }
+          : p
+      ));
 
       // Disable screen interactions
       setScanningState((prev) => ({ ...prev, summary: true }));
 
       try {
+        // Get fresh project state for auto-scan
+        currentProject = getCurrentProject();
+        
         if (fileType === 'spec') {
           for (const specFileMeta of uploadedFiles.filter((f) => f.id)) {
             const fileResponse = await fetch(`${API_BASE}/api/projects/${selectedProjectId}/files/${specFileMeta.id}`);
@@ -338,12 +374,17 @@ function App() {
               throw new Error(`Spec parse failed for ${specFileMeta.name}: ${errText}`);
             }
             const result = await response.json();
-            updateProject(selectedProjectId, {
-              specIndex: result.specIndex || [],
-              files: selectedProject.files.map((f) =>
-                f.id === specFileMeta.id ? { ...f, accepted: true } : f
-              ),
-            });
+            setProjects(prev => prev.map(p => 
+              p.id === selectedProjectId 
+                ? {
+                    ...p,
+                    specIndex: result.specIndex || [],
+                    files: p.files.map(f =>
+                      f.id === specFileMeta.id ? { ...f, accepted: true } : f
+                    )
+                  }
+                : p
+            ));
           }
         }
 
@@ -361,18 +402,30 @@ function App() {
           throw new Error(summaryResult.detail || 'Summary generation failed.');
         }
 
-        updateProject(selectedProjectId, {
-          summary: summaryResult.summary,
-          name: summaryResult.title?.trim() || selectedProject.name,
-          message: '✅ Summary and specs updated successfully!',
-          files: selectedProject.files.map((file) =>
-            uploadedFiles.find((f) => f.id === file.id) ? { ...file, accepted: true } : file
-          ),
-        });
+        setProjects(prev => prev.map(p => 
+          p.id === selectedProjectId 
+            ? {
+                ...p,
+                summary: summaryResult.summary,
+                name: summaryResult.title?.trim() || p.name,
+                message: '✅ Summary and specs updated successfully!',
+                files: p.files.map(file => 
+                  uploadedFiles.find(f => f.id === file.id) 
+                    ? { ...file, accepted: true } 
+                    : file
+                )
+              }
+            : p
+        ));
       } catch (err) {
-        updateProject(selectedProjectId, {
-          message: `❌ Auto-scan failed: ${err.message}`,
-        });
+        setProjects(prev => prev.map(p => 
+          p.id === selectedProjectId 
+            ? {
+                ...p,
+                message: `❌ Auto-scan failed: ${err.message}`
+              }
+            : p
+        ));
       } finally {
         setScanningState((prev) => ({ ...prev, summary: false }));
       }
