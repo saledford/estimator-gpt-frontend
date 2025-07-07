@@ -503,26 +503,14 @@ function App() {
     updateProject(selectedProjectId, { message: 'Scanning summary...' });
 
     try {
-      const formData = new FormData();
-      for (const fileMeta of project.files) {
-        if (fileMeta.id) {
-          try {
-            const response = await fetch(`${API_BASE}/api/get-file/${fileMeta.id}`);
-            if (!response.ok) {
-              throw new Error(`Failed to retrieve ${fileMeta.name}`);
-            }
-            const blob = await response.blob();
-            const file = new File([blob], fileMeta.name, { type: blob.type });
-            formData.append('files', file);
-          } catch (err) {
-            console.error(`Error retrieving file ${fileMeta.name}: ${err.message}`);
-          }
-        }
-      }
-      const response = await fetch(`${API_BASE}/api/generate-summary`, {
+      const response = await fetch(`${API_BASE}/api/projects/${selectedProjectId}/scan`, {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          scan_type: 'summary'
+        })
       });
+      
       const result = await response.json();
       if (!response.ok) {
         throw new Error(result.detail || 'Failed to generate summary.');
@@ -560,26 +548,14 @@ function App() {
     updateProject(selectedProjectId, { message: 'Scanning divisions...' });
 
     try {
-      const formData = new FormData();
-      for (const fileMeta of project.files) {
-        if (fileMeta.id) {
-          try {
-            const response = await fetch(`${API_BASE}/api/get-file/${fileMeta.id}`);
-            if (!response.ok) {
-              throw new Error(`Failed to retrieve ${fileMeta.name}`);
-            }
-            const blob = await response.blob();
-            const file = new File([blob], fileMeta.name, { type: blob.type });
-            formData.append('files', file);
-          } catch (err) {
-            console.error(`Error retrieving file ${fileMeta.name}: ${err.message}`);
-          }
-        }
-      }
-      const response = await fetch(`${API_BASE}/api/generate-divisions`, {
+      const response = await fetch(`${API_BASE}/api/projects/${selectedProjectId}/scan`, {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          scan_type: 'divisions'
+        })
       });
+      
       const result = await response.json();
       if (!response.ok) {
         throw new Error(result.detail || 'Failed to generate divisions.');
@@ -613,26 +589,14 @@ function App() {
     updateProject(selectedProjectId, { message: 'Scanning takeoff...' });
 
     try {
-      const formData = new FormData();
-      for (const fileMeta of project.files) {
-        if (fileMeta.id) {
-          try {
-            const response = await fetch(`${API_BASE}/api/get-file/${fileMeta.id}`);
-            if (!response.ok) {
-              throw new Error(`Failed to retrieve ${fileMeta.name}`);
-            }
-            const blob = await response.blob();
-            const file = new File([blob], fileMeta.name, { type: blob.type });
-            formData.append('files', file);
-          } catch (err) {
-            console.error(`Error retrieving file ${fileMeta.name}: ${err.message}`);
-          }
-        }
-      }
-      const response = await fetch(`${API_BASE}/api/extract-takeoff`, {
+      const response = await fetch(`${API_BASE}/api/projects/${selectedProjectId}/scan`, {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          scan_type: 'takeoff'
+        })
       });
+      
       const result = await response.json();
       if (!response.ok) {
         throw new Error(result.detail || 'Failed to extract takeoff.');
