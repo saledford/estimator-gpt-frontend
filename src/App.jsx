@@ -165,47 +165,85 @@ function App() {
     );
   };
 
-  const addProject = () => {
-    const newProjectId = Date.now();
-    const newProject = {
-      id: newProjectId,
-      name: 'New Project',
-      files: [],
-      summary: '',
-      divisionDescriptions: {},
-      takeoff: [],
-      discussion: [],
-      notes: [],
-      tables: [],
-      preferences: {
-        scopeSensitivity: 0.8,
-        defaultLaborRate: 0,
-        defaultMaterialRate: 0,
-      },
-      specIndex: [],
-      scanning: false,
-      message: '',
-    };
-    setProjects([...projects, newProject]);
-    setSelectedProjectId(newProjectId);
+  const addProject = async () => {
+    try {
+      // Create project in backend first
+      const response = await fetch(`${API_BASE}/api/projects`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          name: 'New Project',
+          description: '' 
+        })
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Backend error: ${error}`);
+      }
+      
+      const backendProject = await response.json();
+      console.log('Created backend project:', backendProject);
+      
+      // Create frontend project with backend's ID
+      const newProject = {
+        id: backendProject.id, // Use backend's ID!
+        name: backendProject.name || 'New Project',
+        files: [],
+        summary: '',
+        divisionDescriptions: {},
+        takeoff: [],
+        discussion: [],
+        notes: [],
+        tables: [],
+        preferences: {
+          scopeSensitivity: 0.8,
+          defaultLaborRate: 0,
+          defaultMaterialRate: 0,
+        },
+        specIndex: [],
+        scanning: false,
+        message: '✅ Project created successfully!',
+      };
+      
+      setProjects([...projects, newProject]);
+      setSelectedProjectId(backendProject.id);
+    } catch (err) {
+      console.error('Failed to create project:', err);
+      alert('Failed to create project. Please check your connection and try again.');
+    }
   };
 
   const deleteProject = async (projectId) => {
     const project = projects.find((p) => p.id === projectId);
     if (project) {
       try {
+        // Delete from backend first
+        const response = await fetch(`${API_BASE}/api/projects/${projectId}`, {
+          method: 'DELETE',
+        });
+        
+        if (!response.ok && response.status !== 404) {
+          throw new Error('Failed to delete from backend');
+        }
+        
+        // Delete files if they exist
         for (const fileMeta of project.files) {
           if (fileMeta.id) {
             await fetch(`${API_BASE}/api/projects/${projectId}/files/${fileMeta.id}`, {
               method: 'DELETE',
-            });
+            }).catch(err => console.error('File delete error:', err));
           }
         }
       } catch (err) {
-        console.error('Failed to delete files:', err);
-        updateProject(projectId, { message: `Error deleting files: ${err.message}` });
+        console.error('Failed to delete project:', err);
+        if (!confirm('Failed to delete from server. Delete locally anyway?')) {
+          return;
+        }
       }
     }
+    
+    // Remove from local state
     setProjects(projects.filter((p) => p.id !== projectId));
     if (selectedProjectId === projectId) {
       setSelectedProjectId(projects.length > 1 ? projects[0].id : null);
@@ -650,7 +688,7 @@ function App() {
         description: item.description || '',
         quantity: parseFloat(item.quantity) || 0,
         unit: item.unit || '',
-        unitCost: parseFloat(item.unitCost) || 0,
+        unitCost: parseFloat(item.modifier) || 0,
         modifier: parseFloat(item.modifier) || 0,
         sourceFiles: project.files.map((file) => file.name),
         createdAt: new Date().toISOString(),
@@ -895,6 +933,53 @@ function App() {
       notes: (selectedProject.notes || []).filter((n) => n.id !== id),
     });
   };
+
+  // Sync projects with backend on mount
+useEffect(() => {
+  const syncProjects = async () => {
+    try {
+      // Fetch projects from backend
+      const response = await fetch(`${API_BASE}/api/projects`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const backendProjects = await response.json();
+      if (!response.ok) throw new Error(backendProjects.detail || 'Failed to fetch projects.');
+
+      // Merge with local projects (in case of offline work)
+      // const localProjects = JSON.parse(localStorage.getItem('projects') || '[]');
+      
+      // For now, just use backend projects
+      if (backendProjects.length > 0) {
+        const mergedProjects = backendProjects.map(bp => ({
+          id: bp.id,
+          name: bp.name || 'Untitled Project',
+          files: bp.files || [],
+          summary: bp.summary || '',
+          divisionDescriptions: bp.division_descriptions || {},
+          takeoff: bp.takeoff_items || [],
+          discussion: [],
+          notes: [],
+          tables: bp.tables || [],
+          preferences: {
+            scopeSensitivity: 0.8,
+            defaultLaborRate: 0,
+            defaultMaterialRate: 0,
+          },
+          specIndex: [],
+          scanning: false,
+          message: '',
+        }));
+        setProjects(mergedProjects);
+      }
+    } catch (err) {
+      console.error('Failed to sync projects:', err);
+      // Use local projects as fallback
+    }
+  }
+
+  syncProjects();
+}, []);
 
   return (
     <ErrorBoundary>
