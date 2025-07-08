@@ -406,7 +406,12 @@ function App() {
           }
         }
 
-        // AUTO-SCAN SUMMARY - FIXED ENDPOINT
+        // ADD DELAY: Give backend time to process uploaded files
+        console.log('Waiting for backend to process files...');
+        await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+
+        // AUTO-SCAN SUMMARY - FIXED ENDPOINT WITH ENHANCED ERROR LOGGING
+        console.log(`Starting auto-scan for project ${selectedProjectId}...`);
         const summaryResponse = await fetch(`${API_BASE}/api/projects/${selectedProjectId}/scan`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -414,11 +419,38 @@ function App() {
             scan_type: 'summary'
           })
         });
-        
-        const summaryResult = await summaryResponse.json();
-        if (!summaryResponse.ok || !summaryResult.summary) {
-          throw new Error(summaryResult.detail || 'Summary generation failed.');
+
+        // Add debugging
+        console.log('Scan response status:', summaryResponse.status);
+        console.log('Scan response headers:', summaryResponse.headers);
+        const responseText = await summaryResponse.text();
+        console.log('Scan response text:', responseText);
+
+        // Try to parse as JSON
+        let summaryResult;
+        try {
+          summaryResult = JSON.parse(responseText);
+          console.log('Parsed scan result:', summaryResult);
+        } catch (e) {
+          console.error('Failed to parse scan response:', e);
+          console.error('Raw response was:', responseText);
+          throw new Error(`Invalid response from scan endpoint: ${responseText.substring(0, 200)}...`);
         }
+
+        if (!summaryResponse.ok) {
+          console.error('Scan request failed:', summaryResult);
+          throw new Error(summaryResult.detail || `Scan failed with status ${summaryResponse.status}`);
+        }
+
+        if (!summaryResult.summary) {
+          console.error('No summary in response:', summaryResult);
+          throw new Error('Summary generation failed - no summary returned.');
+        }
+
+        console.log('Auto-scan successful:', {
+          summary: summaryResult.summary.substring(0, 100) + '...',
+          title: summaryResult.title
+        });
 
         setProjects(prev => prev.map(p => 
           p.id === selectedProjectId 
