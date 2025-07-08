@@ -165,60 +165,40 @@ function App() {
     );
   };
 
-  const addProject = async () => {
-    try {
-      // Create project in backend first
-      const response = await fetch(`${API_BASE}/api/projects`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          name: 'New Project',
-          description: '' 
-        })
-      });
-      
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Backend error: ${error}`);
-      }
-      
-      const backendProject = await response.json();
-      console.log('Created backend project:', backendProject);
-      
-      // Create frontend project with backend's ID
-      const newProject = {
-        id: backendProject.id, // Use backend's ID!
-        name: backendProject.name || 'New Project',
-        files: [],
-        summary: '',
-        divisionDescriptions: {},
-        takeoff: [],
-        discussion: [],
-        notes: [],
-        tables: [],
-        preferences: {
-          scopeSensitivity: 0.8,
-          defaultLaborRate: 0,
-          defaultMaterialRate: 0,
-        },
-        specIndex: [],
-        scanning: false,
-        message: '✅ Project created successfully!',
-      };
-      
-      setProjects([...projects, newProject]);
-      setSelectedProjectId(backendProject.id);
-    } catch (err) {
-      console.error('Failed to create project:', err);
-      alert('Failed to create project. Please check your connection and try again.');
-    }
+  const addProject = () => {
+    // Generate temporary UUID (crypto.randomUUID is more modern but needs fallback)
+    const tempProjectId = crypto.randomUUID ? crypto.randomUUID() : `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;;
+    
+    const newProject = {
+      id: tempProjectId,
+      name: 'New Project (upload a document to start...)',
+      files: [],
+      summary: '',
+      divisionDescriptions: {},
+      takeoff: [],
+      discussion: [],
+      notes: [],
+      tables: [],
+      preferences: {
+        scopeSensitivity: 0.8,
+        defaultLaborRate: 0,
+        defaultMaterialRate: 0,
+      },
+      specIndex: [],
+      scanning: false,
+      isTemporary: true, // New flag to indicate unsynced project
+      message: '📁 Upload blueprints, specs, or addenda to initialize this project',
+    };
+    
+    setProjects([...projects, newProject]);
+    setSelectedProjectId(tempProjectId);
   };
 
   const deleteProject = async (projectId) => {
     const project = projects.find((p) => p.id === projectId);
-    if (project) {
+    if (project && !project.isTemporary) {
+      // Only try to delete from backend if it's not temporary
       try {
-        // Delete from backend first
         const response = await fetch(`${API_BASE}/api/projects/${projectId}`, {
           method: 'DELETE',
         });
@@ -243,7 +223,7 @@ function App() {
       }
     }
     
-    // Remove from local state
+    // Always remove from local state (both temporary and permanent projects)
     setProjects(projects.filter((p) => p.id !== projectId));
     if (selectedProjectId === projectId) {
       setSelectedProjectId(projects.length > 1 ? projects[0].id : null);
@@ -446,7 +426,8 @@ function App() {
                 ...p,
                 summary: summaryResult.summary,
                 name: summaryResult.title?.trim() || p.name,
-                message: '✅ Summary and specs updated successfully!',
+                isTemporary: false, // Remove temporary flag ✅
+                message: '✅ Project initialized successfully!',
                 files: p.files.map(file => 
                   uploadedFiles.find(f => f.id === file.id) 
                     ? { ...file, accepted: true } 
@@ -946,10 +927,7 @@ useEffect(() => {
       const backendProjects = await response.json();
       if (!response.ok) throw new Error(backendProjects.detail || 'Failed to fetch projects.');
 
-      // Merge with local projects (in case of offline work)
-      // const localProjects = JSON.parse(localStorage.getItem('projects') || '[]');
-      
-      // For now, just use backend projects
+      // For now, just use backend projects and don't sync temporary ones
       if (backendProjects.length > 0) {
         const mergedProjects = backendProjects.map(bp => ({
           id: bp.id,
@@ -969,17 +947,31 @@ useEffect(() => {
           specIndex: [],
           scanning: false,
           message: '',
+          isTemporary: false, // Backend projects are never temporary ✅
         }));
-        setProjects(mergedProjects);
+        
+        // Keep any temporary projects from current state
+        const tempProjects = projects.filter(p => p.isTemporary);
+        setProjects([...mergedProjects, ...tempProjects]);
+        
+        // Set first non-temporary project as selected if none selected
+        if (!selectedProjectId && mergedProjects.length > 0) {
+          setSelectedProjectId(mergedProjects[0].id);
+        }
+      } else {
+        // No backend projects, keep only temporary ones
+        const tempProjects = projects.filter(p => p.isTemporary);
+        setProjects(tempProjects);
       }
     } catch (err) {
       console.error('Failed to sync projects:', err);
-      // Use local projects as fallback
+      // Use local projects as fallback - they're already loaded in useState
+      console.log('Using local projects as fallback');
     }
-  }
+  };
 
   syncProjects();
-}, []);
+}, []); // Run once on mount
 
   return (
     <ErrorBoundary>
@@ -1120,8 +1112,27 @@ useEffect(() => {
                     />
                   ) : (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span style={{ fontSize: '1.125rem' }}>📁</span>
-                      {project.name}
+                      <span style={{ fontSize: '1.125rem' }}>
+                        {project.isTemporary ? '📂' : '📁'}
+                      </span>
+                      <span style={{ 
+                        fontStyle: project.isTemporary ? 'italic' : 'normal',
+                        opacity: project.isTemporary ? 0.7 : 1
+                      }}>
+                        {project.name}
+                      </span>
+                      {project.isTemporary && (
+                        <span 
+                          style={{ 
+                            fontSize: '0.625rem', 
+                            color: '#718096',
+                            marginLeft: '0.25rem'
+                          }}
+                          title="This project will be named automatically when you upload your first document"
+                        >
+                          (pending)
+                        </span>
+                      )}
                     </div>
                   )}
                 </li>
