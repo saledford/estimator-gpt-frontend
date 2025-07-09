@@ -166,7 +166,7 @@ function App() {
   };
 
   const addProject = () => {
-    // Generate temporary UUID (crypto.randomUUID is more modern but needs fallback)
+    // Generate temporary UUID with better fallback
     const tempProjectId = crypto.randomUUID ? crypto.randomUUID() : `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;;
     
     const newProject = {
@@ -285,201 +285,239 @@ function App() {
         : p
     ));
 
-    for (let i = 0; i < unique.length; i++) {
-      const file = unique[i];
-      if (!file.name.toLowerCase().endsWith('.pdf')) {
-        setProjects(prev => prev.map(p => 
-          p.id === selectedProjectId 
-            ? {
-                ...p,
-                files: p.files.map(f =>
-                  f.name === file.name && f.type === fileType && f.isUploading
-                    ? { ...f, isUploading: false }
-                    : f
-                ),
-                message: `Only PDF files are supported: ${file.name} skipped.`
-              }
-            : p
-        ));
-        continue;
-      }
-
-      const formData = new FormData();
-      formData.append('file', file);
-      try {
-        const response = await fetch(`${API_BASE}/api/projects/${selectedProjectId}/upload`, {
-          method: 'POST',
-          body: formData,
-        });
-        const result = await response.json();
-        if (!response.ok) {
-          throw new Error(result.detail || `Failed to upload ${file.name}`);
+    try {
+      // Upload files (backend will auto-create project if needed)
+      for (let i = 0; i < unique.length; i++) {
+        const file = unique[i];
+        if (!file.name.toLowerCase().endsWith('.pdf')) {
+          setProjects(prev => prev.map(p => 
+            p.id === selectedProjectId 
+              ? {
+                  ...p,
+                  files: p.files.map(f =>
+                    f.name === file.name && f.type === fileType && f.isUploading
+                      ? { ...f, isUploading: false }
+                      : f
+                  ),
+                  message: `Only PDF files are supported: ${file.name} skipped.`
+                }
+              : p
+          ));
+          continue;
         }
 
-        const fileMeta = {
-          id: result.fileId,
-          name: file.name,
-          type: fileType,
-          accepted: false,
-          isUploading: false,
-        };
-        uploadedFiles[i] = fileMeta;
+        const formData = new FormData();
+        formData.append('file', file);
+        try {
+          const response = await fetch(`${API_BASE}/api/projects/${selectedProjectId}/upload`, {
+            method: 'POST',
+            body: formData,
+          });
+          const result = await response.json();
+          if (!response.ok) {
+            throw new Error(result.detail || `Failed to upload ${file.name}`);
+          }
 
-        // Use callback to get fresh state
-        setProjects(prev => prev.map(p => 
-          p.id === selectedProjectId 
-            ? {
-                ...p,
-                files: p.files.map(f =>
-                  f.name === file.name && f.type === fileType && f.isUploading
-                    ? fileMeta
-                    : f
-                )
-              }
-            : p
-        ));
-      } catch (err) {
-        console.error(`Failed to upload ${file.name}: ${err.message}`);
-        setProjects(prev => prev.map(p => 
-          p.id === selectedProjectId 
-            ? {
-                ...p,
-                files: p.files.map(f =>
-                  f.name === file.name && f.type === fileType && f.isUploading
-                    ? { ...f, isUploading: false }
-                    : f
-                ),
-                message: `Failed to upload ${file.name}: ${err.message}`
-              }
-            : p
-        ));
-        return;
+          const fileMeta = {
+            id: result.fileId,
+            name: file.name,
+            type: fileType,
+            accepted: false,
+            isUploading: false,
+          };
+          uploadedFiles[i] = fileMeta;
+
+          // Use callback to get fresh state
+          setProjects(prev => prev.map(p => 
+            p.id === selectedProjectId 
+              ? {
+                  ...p,
+                  files: p.files.map(f =>
+                    f.name === file.name && f.type === fileType && f.isUploading
+                      ? fileMeta
+                      : f
+                  )
+                }
+              : p
+          ));
+        } catch (err) {
+          console.error(`Failed to upload ${file.name}: ${err.message}`);
+          setProjects(prev => prev.map(p => 
+            p.id === selectedProjectId 
+              ? {
+                  ...p,
+                  files: p.files.map(f =>
+                    f.name === file.name && f.type === fileType && f.isUploading
+                      ? { ...f, isUploading: false }
+                      : f
+                  ),
+                  message: `❌ Upload failed for ${file.name}. Please check your internet connection and try again.`
+                }
+              : p
+          ));
+          return;
+        }
       }
-    }
 
-    // Auto-scan for blueprints, specs, or addenda
-    if (fileType === 'spec' || fileType === 'blueprint' || fileType === 'addenda') {
+      // After all files uploaded successfully
       setProjects(prev => prev.map(p => 
         p.id === selectedProjectId 
           ? {
               ...p,
-              message: '📄 Scanning uploaded document for summary...'
+              message: `✅ ${unique.length} file(s) uploaded successfully. Processing...`
             }
           : p
       ));
 
-      // Disable screen interactions
-      setScanningState((prev) => ({ ...prev, summary: true }));
+      // Auto-scan for blueprints, specs, or addenda
+      if (fileType === 'spec' || fileType === 'blueprint' || fileType === 'addenda') {
+        setProjects(prev => prev.map(p => 
+          p.id === selectedProjectId 
+            ? {
+                ...p,
+                message: '📄 Scanning uploaded document for summary...'
+              }
+            : p
+        ));
 
-      try {
-        // Get fresh project state for auto-scan
-        currentProject = getCurrentProject();
-        
-        if (fileType === 'spec') {
-          for (const specFileMeta of uploadedFiles.filter((f) => f.id)) {
-            const fileResponse = await fetch(`${API_BASE}/api/projects/${selectedProjectId}/files/${specFileMeta.id}`);
-            if (!fileResponse.ok) throw new Error(`Failed to retrieve ${specFileMeta.name}`);
-            const blob = await fileResponse.blob();
-            const file = new File([blob], specFileMeta.name, { type: blob.type });
-            const specFormData = new FormData();
-            specFormData.append('file', file);
-            const response = await fetch(`${API_BASE}/api/parse-spec`, {
-              method: 'POST',
-              body: specFormData,
-            });
-            if (!response.ok) {
-              const errText = await response.text();
-              throw new Error(`Spec parse failed for ${specFileMeta.name}: ${errText}`);
-            }
-            const result = await response.json();
-            setProjects(prev => prev.map(p => 
-              p.id === selectedProjectId 
-                ? {
-                    ...p,
-                    specIndex: result.specIndex || [],
-                    files: p.files.map(f =>
-                      f.id === specFileMeta.id ? { ...f, accepted: true } : f
-                    )
-                  }
-                : p
-            ));
-          }
-        }
+        // Disable screen interactions
+        setScanningState((prev) => ({ ...prev, summary: true }));
 
-        // ADD DELAY: Give backend time to process uploaded files
-        console.log('Waiting for backend to process files...');
-        await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
-
-        // AUTO-SCAN SUMMARY - FIXED ENDPOINT WITH ENHANCED ERROR LOGGING
-        console.log(`Starting auto-scan for project ${selectedProjectId}...`);
-        const summaryResponse = await fetch(`${API_BASE}/api/projects/${selectedProjectId}/scan`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            scan_type: 'summary'
-          })
-        });
-
-        // Add debugging
-        console.log('Scan response status:', summaryResponse.status);
-        console.log('Scan response headers:', summaryResponse.headers);
-        const responseText = await summaryResponse.text();
-        console.log('Scan response text:', responseText);
-
-        // Try to parse as JSON
-        let summaryResult;
         try {
-          summaryResult = JSON.parse(responseText);
-          console.log('Parsed scan result:', summaryResult);
-        } catch (e) {
-          console.error('Failed to parse scan response:', e);
-          console.error('Raw response was:', responseText);
-          throw new Error(`Invalid response from scan endpoint: ${responseText.substring(0, 200)}...`);
-        }
-
-        if (!summaryResponse.ok) {
-          console.error('Scan request failed:', summaryResult);
-          throw new Error(summaryResult.detail || `Scan failed with status ${summaryResponse.status}`);
-        }
-
-        if (!summaryResult.summary) {
-          console.error('No summary in response:', summaryResult);
-          throw new Error('Summary generation failed - no summary returned.');
-        }
-
-        console.log('Auto-scan successful:', {
-          summary: summaryResult.summary.substring(0, 100) + '...',
-          title: summaryResult.title
-        });
-
-        setProjects(prev => prev.map(p => 
-          p.id === selectedProjectId 
-            ? {
-                ...p,
-                summary: summaryResult.summary,
-                name: summaryResult.title?.trim() || p.name,
-                isTemporary: false, // Remove temporary flag ✅
-                message: '✅ Project initialized successfully!',
-                files: p.files.map(file => 
-                  uploadedFiles.find(f => f.id === file.id) 
-                    ? { ...file, accepted: true } 
-                    : file
-                )
+          // Get fresh project state for auto-scan
+          currentProject = getCurrentProject();
+          
+          if (fileType === 'spec') {
+            for (const specFileMeta of uploadedFiles.filter((f) => f.id)) {
+              const fileResponse = await fetch(`${API_BASE}/api/projects/${selectedProjectId}/files/${specFileMeta.id}`);
+              if (!fileResponse.ok) throw new Error(`Failed to retrieve ${specFileMeta.name}`);
+              const blob = await fileResponse.blob();
+              const file = new File([blob], specFileMeta.name, { type: blob.type });
+              const specFormData = new FormData();
+              specFormData.append('file', file);
+              const response = await fetch(`${API_BASE}/api/parse-spec`, {
+                method: 'POST',
+                body: specFormData,
+              });
+              if (!response.ok) {
+                const errText = await response.text();
+                throw new Error(`Spec parse failed for ${specFileMeta.name}: ${errText}`);
               }
-            : p
-        ));
-      } catch (err) {
-        setProjects(prev => prev.map(p => 
-          p.id === selectedProjectId 
-            ? {
-                ...p,
-                message: `❌ Auto-scan failed: ${err.message}`
-              }
-            : p
-        ));
-      } finally {
-        setScanningState((prev) => ({ ...prev, summary: false }));
+              const result = await response.json();
+              setProjects(prev => prev.map(p => 
+                p.id === selectedProjectId 
+                  ? {
+                      ...p,
+                      specIndex: result.specIndex || [],
+                      files: p.files.map(f =>
+                        f.id === specFileMeta.id ? { ...f, accepted: true } : f
+                      )
+                    }
+                  : p
+              ));
+            }
+          }
+
+          // ADD DELAY: Give backend time to process uploaded files
+          console.log('Waiting for backend to process files...');
+          await new Promise(resolve => setTimeout(resolve, 3000));
+
+          // AUTO-SCAN SUMMARY - ENHANCED ERROR HANDLING
+          console.log('Starting auto-scan for project:', selectedProjectId);
+
+          // The scan endpoint expects a request body but backend needs to be fixed to accept it properly
+          const scanPayload = { scan_type: 'summary' };
+          console.log('Scan payload:', scanPayload);
+
+          const summaryResponse = await fetch(`${API_BASE}/api/projects/${selectedProjectId}/scan`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(scanPayload)
+          });
+          
+          console.log('Scan response status:', summaryResponse.status);
+          console.log('Scan response headers:', Object.fromEntries(summaryResponse.headers.entries()));
+          const responseText = await summaryResponse.text();
+          console.log('Scan response text:', responseText);
+
+          // Try to parse as JSON
+          let summaryResult;
+          try {
+            summaryResult = JSON.parse(responseText);
+            console.log('Parsed scan result:', summaryResult);
+          } catch (e) {
+            console.error('Failed to parse scan response:', e);
+            console.error('Raw response was:', responseText);
+            throw new Error(`Invalid response from scan endpoint: ${responseText.substring(0, 200)}...`);
+          }
+
+          if (!summaryResponse.ok) {
+            console.error('Scan request failed:', summaryResult);
+            throw new Error(summaryResult.detail || `Scan failed with status ${summaryResponse.status}`);
+          }
+
+          if (!summaryResult.summary) {
+            console.error('No summary in response:', summaryResult);
+            throw new Error('Summary generation failed - no summary returned.');
+          }
+
+          console.log('Auto-scan successful:', {
+            summary: summaryResult.summary.substring(0, 100) + '...',
+            title: summaryResult.title
+          });
+
+          setProjects(prev => prev.map(p => 
+            p.id === selectedProjectId 
+              ? {
+                  ...p,
+                  summary: summaryResult.summary,
+                  name: summaryResult.title?.trim() || p.name,
+                  isTemporary: false, // Remove temporary flag
+                  message: '✅ Project initialized successfully!',
+                  files: p.files.map(file => 
+                    uploadedFiles.find(f => f.id === file.id) 
+                      ? { ...file, accepted: true } 
+                      : file
+                  )
+                }
+              : p
+          ));
+        } catch (err) {
+          console.error('Auto-scan error details:', {
+            message: err.message,
+            stack: err.stack,
+            projectId: selectedProjectId,
+            uploadedFiles: uploadedFiles.length
+          });
+          
+          setProjects(prev => prev.map(p => 
+            p.id === selectedProjectId 
+              ? {
+                  ...p,
+                  message: `❌ Auto-scan failed: ${err.message}. You can try scanning manually from the Summary tab.`,
+                  // Keep files uploaded even if scan fails
+                  files: p.files.map(file => 
+                    uploadedFiles.find(f => f.id === file.id) 
+                      ? { ...file, accepted: false } // Mark as uploaded but not scanned
+                      : file
+                  )
+                }
+              : p
+          ));
+        } finally {
+          setScanningState((prev) => ({ ...prev, summary: false }));
+        }
       }
+    } catch (err) {
+      console.error(`Failed to upload files: ${err.message}`);
+      setProjects(prev => prev.map(p => 
+        p.id === selectedProjectId 
+          ? {
+              ...p,
+              message: `Failed to upload files: ${err.message}`
+            }
+          : p
+      ));
     }
   };
 
@@ -517,7 +555,7 @@ function App() {
     } catch (err) {
       console.error(`Failed to delete ${fileToDelete.name}: ${err.message}`);
       updateProject(selectedProjectId, {
-        message: `Failed to delete ${fileToDelete.name}: ${err.message}`,
+        message: `❌ Failed to delete ${fileToDelete.name}. Please check your internet connection and try again.`,
       });
       return;
     }
@@ -619,7 +657,9 @@ function App() {
       });
     } catch (err) {
       console.error('Summary scan error:', err.message);
-      updateProject(selectedProjectId, { message: `Summary scan failed: ${err.message}` });
+      updateProject(selectedProjectId, { 
+        message: `❌ Summary scan failed: ${err.message}. Please check that your files are readable PDFs and try again.` 
+      });
     } finally {
       setScanningState((prev) => ({ ...prev, summary: false }));
     }
@@ -660,7 +700,9 @@ function App() {
       });
     } catch (err) {
       console.error('Divisions scan error:', err.message);
-      updateProject(selectedProjectId, { message: `Divisions scan failed: ${err.message}` });
+      updateProject(selectedProjectId, { 
+        message: `❌ Divisions scan failed: ${err.message}. Please ensure your documents contain construction specifications and try again.` 
+      });
     } finally {
       setScanningState((prev) => ({ ...prev, divisions: false }));
     }
@@ -736,7 +778,9 @@ function App() {
       });
     } catch (err) {
       console.error('Takeoff scan error:', err.message);
-      updateProject(selectedProjectId, { message: `Takeoff scan failed: ${err.message}` });
+      updateProject(selectedProjectId, { 
+        message: `❌ Takeoff scan failed: ${err.message}. Please verify your documents contain quantity information and try again.` 
+      });
     } finally {
       setScanningState((prev) => ({ ...prev, takeoff: false }));
     }
@@ -914,7 +958,11 @@ function App() {
         discussion: [
           ...(selectedProject.discussion || []),
           userMsg,
-          { sender: 'GPT', text: `Error: ${err.message}`, timestamp: new Date().toLocaleTimeString() },
+          { 
+            sender: 'GPT', 
+            text: `❌ Sorry, I encountered an error: ${err.message}. Please try rephrasing your question.`, 
+            timestamp: new Date().toLocaleTimeString() 
+          },
         ],
       });
     }
@@ -959,31 +1007,32 @@ useEffect(() => {
       const backendProjects = await response.json();
       if (!response.ok) throw new Error(backendProjects.detail || 'Failed to fetch projects.');
 
-      // For now, just use backend projects and don't sync temporary ones
-      if (backendProjects.length > 0) {
-        const mergedProjects = backendProjects.map(bp => ({
-          id: bp.id,
-          name: bp.name || 'Untitled Project',
-          files: bp.files || [],
-          summary: bp.summary || '',
-          divisionDescriptions: bp.division_descriptions || {},
-          takeoff: bp.takeoff_items || [],
-          discussion: [],
-          notes: [],
-          tables: bp.tables || [],
-          preferences: {
-            scopeSensitivity: 0.8,
-            defaultLaborRate: 0,
-            defaultMaterialRate: 0,
-          },
-          specIndex: [],
-          scanning: false,
-          message: '',
-          isTemporary: false, // Backend projects are never temporary ✅
-        }));
-        
-        // Keep any temporary projects from current state
-        const tempProjects = projects.filter(p => p.isTemporary);
+      // Handle different response formats and map backend projects properly
+      const mergedProjects = backendProjects.projects ? backendProjects.projects.map(bp => ({
+        id: bp.id,
+        name: bp.title || bp.name || 'Untitled Project',
+        files: bp.files || [],
+        summary: bp.summary || '',
+        divisionDescriptions: bp.division_descriptions || {},
+        takeoff: bp.takeoff_items || [],
+        discussion: [],
+        notes: [],
+        tables: bp.tables || [],
+        preferences: {
+          scopeSensitivity: 0.8,
+          defaultLaborRate: 0,
+          defaultMaterialRate: 0,
+        },
+        specIndex: [],
+        scanning: false,
+        message: '',
+        isTemporary: false, // Backend projects are never temporary
+      })) : [];
+      
+      // Keep any temporary projects from current state
+      const tempProjects = projects.filter(p => p.isTemporary);
+      
+      if (mergedProjects.length > 0) {
         setProjects([...mergedProjects, ...tempProjects]);
         
         // Set first non-temporary project as selected if none selected
@@ -992,7 +1041,6 @@ useEffect(() => {
         }
       } else {
         // No backend projects, keep only temporary ones
-        const tempProjects = projects.filter(p => p.isTemporary);
         setProjects(tempProjects);
       }
     } catch (err) {
@@ -1360,6 +1408,11 @@ useEffect(() => {
                 handleAddNote={handleAddNote}
                 handleUpdateNote={handleUpdateNote}
                 handleDeleteNote={handleDeleteNote}
+              />
+            )}
+            {selectedProject && activeTab === 'analytics' && (
+              <AnalyticsDashboard 
+                selectedProject={selectedProject}
               />
             )}
             {!selectedProject && (
