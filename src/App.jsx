@@ -549,8 +549,9 @@ function App() {
     if (!fileToDelete) return;
 
     try {
-      await fetch(`${API_BASE}/api/projects/${selectedProjectId}/files/${fileId}`, {
-        method: 'DELETE',
+      // Delete a file
+      const response = await fetch(`${API_BASE}/api/projects/${projectId}/files/${fileId}`, {
+        method: 'DELETE'
       });
     } catch (err) {
       console.error(`Failed to delete ${fileToDelete.name}: ${err.message}`);
