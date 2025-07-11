@@ -6,9 +6,7 @@ import DiscussionTab from './components/DiscussionTab';
 import NotesTab from './components/NotesTab';
 import TablesTab from './components/TablesTab';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
-
-// API Configuration
-const API_BASE = 'https://estimator-gpt-backend.onrender.com';
+import { API_BASE } from './config';
 
 // Inject spinning and pulse animations into document head (only once)
 if (typeof window !== 'undefined' && !document.getElementById('animations')) {
@@ -550,7 +548,7 @@ function App() {
 
     try {
       // Delete a file
-      const response = await fetch(`${API_BASE}/api/projects/${projectId}/files/${fileId}`, {
+      const response = await fetch(`${API_BASE}/api/projects/${selectedProjectId}/files/${fileId}`, {
         method: 'DELETE'
       });
     } catch (err) {
