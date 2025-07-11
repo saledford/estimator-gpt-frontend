@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
+import { API_BASE } from '../config';
 
 const ProjectOutcomeModal = ({ projectId, estimateTotal, onClose, showToast }) => {
   const [outcome, setOutcome] = useState('');
   const [winningBid, setWinningBid] = useState('');
   const [feedback, setFeedback] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // API Configuration
-  const API_BASE = 'https://estimator-gpt-backend.onrender.com';
 
   const submitOutcome = async () => {
     setIsSubmitting(true);
