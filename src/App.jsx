@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import crypto from 'crypto';
 import FilesTab from './components/FilesTab';
 import SummaryTab from './components/SummaryTab';
 import TakeoffTab from './components/TakeoffTab';
@@ -100,13 +101,23 @@ const getDivisionName = (divisionId) => {
   return division ? `Division ${division.id} – ${division.title}` : divisionId || 'Unknown';
 };
 
+// Helper function to generate UUID consistently
+const generateUUID = () => {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    // Fallback for environments where crypto.randomUUID() is not available
+    return `uuid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+};
+
 function App() {
   const [projects, setProjects] = useState(() => {
     const saved = localStorage.getItem('projects');
     if (saved) {
       const parsed = JSON.parse(saved);
       return parsed.map((project) => ({
-        id: project.id || Date.now(),
+        id: project.id || generateUUID(),
         name: project.name || 'New Project',
         files: project.files || [],
         summary: project.summary || '',
@@ -164,8 +175,14 @@ function App() {
   };
 
   const addProject = () => {
-    // Generate temporary UUID with better fallback
-    const tempProjectId = crypto.randomUUID ? crypto.randomUUID() : `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;;
+    // Generate proper UUID using crypto.randomUUID() with fallback
+    let tempProjectId;
+    try {
+      tempProjectId = crypto.randomUUID();
+    } catch {
+      // Fallback for environments where crypto.randomUUID() is not available
+      tempProjectId = `temp_${generateUUID()}`;
+    }
     
     const newProject = {
       id: tempProjectId,
@@ -736,8 +753,8 @@ function App() {
         throw new Error(result.detail || 'Failed to extract takeoff.');
       }
 
-      const newTakeoffItems = result.takeoff?.map((item, index) => ({
-        id: Date.now() + index,
+      const newTakeoffItems = result.takeoff?.map((item) => ({
+        id: generateUUID(),
         division: getDivisionName(item.division),
         description: item.description || '',
         quantity: parseFloat(item.quantity) || 0,
@@ -810,7 +827,7 @@ function App() {
     }
 
     const newItemData = {
-      id: Date.now(),
+      id: generateUUID(),
       division: division ? getDivisionName(division) : 'Unknown',
       description: newItem.description || '',
       quantity: parseFloat(newItem.quantity) || 0,
@@ -929,7 +946,7 @@ function App() {
             }
           } else if (action.type === 'addTakeoff') {
             const newItem = {
-              id: Date.now(),
+              id: generateUUID(),
               description: action.description || '',
               division: action.division ? getDivisionName(action.division) : 'Unknown',
               quantity: parseFloat(action.quantity) || 0,
@@ -971,7 +988,7 @@ function App() {
     if (!selectedProjectId) return;
     updateProject(selectedProjectId, {
       notes: [...(selectedProject.notes || []), { 
-        id: Date.now(), 
+        id: generateUUID(), 
         text: '',
         timestamp: new Date().toISOString()
       }],
