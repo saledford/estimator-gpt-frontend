@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE } from '../config';
 
 const PricingIntelligence = ({ item, location, projectId, onPriceAccept }) => {
   const [intelligence, setIntelligence] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  // API Configuration
-  const API_BASE = 'https://estimator-gpt-backend.onrender.com';
 
   useEffect(() => {
     fetchPricingIntelligence();
