@@ -4,7 +4,7 @@ import PricingConfidenceChart from './analytics/PricingConfidenceChart';
 import MarketTrendsGraph from './analytics/MarketTrendsGraph';
 import WinRateAnalysis from './analytics/WinRateAnalysis';
 import ContributorLeaderboard from './analytics/ContributorLeaderboard';
-import { API_BASE } from './config';
+import { API_BASE } from '../config';
 
 const AnalyticsDashboard = () => {
   console.log('AnalyticsDashboard rendering');
